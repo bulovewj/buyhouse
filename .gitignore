@@ -1,0 +1,29 @@
+# 환경변수 (API 키 포함) - 절대 커밋 금지
+.env
+.env.local
+.env.production
+
+# DB 파일
+*.db
+*.sqlite
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+build/
+
+# 빌드 결과물
+backend/static/
+
+# IDE
+.DS_Store
+.vscode/
+.idea/
