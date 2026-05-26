@@ -44,7 +44,46 @@ export default function Transactions() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-white">실거래가</h1>
-        <p className="text-gray-400 text-sm mt-1">부산 아파트·빌라 실거래가 (국토부)</p>
+        <p className="text-gray-400 text-sm mt-1">부산 아파트·빌라 실거래가 (국토부 — 약 2~3개월 지연)</p>
+      </div>
+
+      {/* 실시간 시세 외부 링크 */}
+      <div className="bg-gray-800 rounded-xl p-4">
+        <p className="text-gray-400 text-xs mb-3">실시간 시세가 필요하다면 외부 서비스를 이용하세요</p>
+        <div className="flex flex-wrap gap-2">
+          <a
+            href="https://new.land.naver.com/complexes?ms=35.179817,129.075257,13&a=APT"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 bg-green-700/40 hover:bg-green-700/60 text-green-300 rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+          >
+            <span>🏠</span> 네이버 부동산
+          </a>
+          <a
+            href="https://hogangnono.com/apt/busan"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 bg-orange-700/40 hover:bg-orange-700/60 text-orange-300 rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+          >
+            <span>📊</span> 호갱노노
+          </a>
+          <a
+            href="https://kbland.kr/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 bg-yellow-700/40 hover:bg-yellow-700/60 text-yellow-300 rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+          >
+            <span>🏦</span> KB부동산
+          </a>
+          <a
+            href="https://www.zigbang.com/home/apt/map?lat=35.179817&lng=129.075257&zoom=13"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 bg-blue-700/40 hover:bg-blue-700/60 text-blue-300 rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+          >
+            <span>🔍</span> 직방
+          </a>
+        </div>
       </div>
 
       {/* 검색 필터 */}
@@ -112,10 +151,10 @@ export default function Transactions() {
                       key={i}
                       className="border-b border-gray-700/50 hover:bg-gray-700/30 transition-colors"
                     >
-                      <td className="py-3 px-4 text-white font-medium">{item.building_name || '-'}</td>
+                      <td className="py-3 px-4 text-white font-medium">{item.apt_name || '-'}</td>
                       <td className="py-3 px-4 text-gray-300">{item.district} {item.dong}</td>
                       <td className="py-3 px-4 text-gray-300">{item.deal_date || '-'}</td>
-                      <td className="py-3 px-4 text-right text-gray-300">{item.area_m2 != null ? item.area_m2.toFixed(1) : '-'}</td>
+                      <td className="py-3 px-4 text-right text-gray-300">{item.area_sqm != null ? item.area_sqm.toFixed(1) : '-'}</td>
                       <td className="py-3 px-4 text-right text-gray-300">{item.floor != null ? `${item.floor}층` : '-'}</td>
                       <td className="py-3 px-4 text-right text-blue-400 font-semibold">{formatPrice(item.price_won)}</td>
                     </tr>
@@ -133,13 +172,13 @@ export default function Transactions() {
               items.map((item, i) => (
                 <div key={i} className="bg-gray-800 rounded-xl p-4 space-y-2">
                   <div className="flex justify-between items-start">
-                    <p className="text-white font-semibold text-sm">{item.building_name || '-'}</p>
+                    <p className="text-white font-semibold text-sm">{item.apt_name || '-'}</p>
                     <p className="text-blue-400 font-bold text-sm">{formatPrice(item.price_won)}</p>
                   </div>
                   <p className="text-gray-400 text-xs">{item.district} {item.dong}</p>
                   <div className="flex gap-4 text-xs text-gray-500">
                     <span>{item.deal_date}</span>
-                    <span>{item.area_m2 != null ? `${item.area_m2.toFixed(1)}m²` : ''}</span>
+                    <span>{item.area_sqm != null ? `${item.area_sqm.toFixed(1)}m²` : ''}</span>
                     <span>{item.floor != null ? `${item.floor}층` : ''}</span>
                   </div>
                 </div>

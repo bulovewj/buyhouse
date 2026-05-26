@@ -1,3 +1,5 @@
+import hmac
+
 from fastapi import APIRouter, Depends, HTTPException, Header
 
 from app.core.config import settings
@@ -6,7 +8,8 @@ router = APIRouter(tags=["admin"])
 
 
 async def verify_admin(x_admin_token: str = Header(...)):
-    if x_admin_token != settings.ADMIN_TOKEN:
+    # hmac.compare_digest: 타이밍 공격(timing attack) 방지용 상수 시간 비교
+    if not hmac.compare_digest(x_admin_token, settings.ADMIN_TOKEN):
         raise HTTPException(status_code=403, detail="Forbidden")
 
 

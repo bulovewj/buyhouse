@@ -2,16 +2,33 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.config import settings
 from app.core.database import init_db
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
+
+# httpx가 요청 URL 전체(API 키 포함)를 INFO로 출력하는 것을 차단
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
 
 
 @asynccontextmanager
@@ -29,14 +46,28 @@ async def lifespan(app: FastAPI):
     logger.info("스케줄러 종료")
 
 
-app = FastAPI(title="부산 내집마련 대시보드", version="0.1.0", lifespan=lifespan)
+app = FastAPI(
+    title="부산 내집마련 대시보드",
+    version="0.1.0",
+    lifespan=lifespan,
+    docs_url=None,   # 프로덕션에서 Swagger UI 비활성화
+    redoc_url=None,
+)
 
+# TrustedHostMiddleware — Host 헤더 스푸핑 방지
+_allowed_hosts = ["buyhouse-production.up.railway.app", "localhost", "127.0.0.1"]
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=_allowed_hosts)
+
+# 보안 헤더
+app.add_middleware(SecurityHeadersMiddleware)
+
+# CORS — 허용 메서드·헤더를 실제 사용하는 것으로만 제한
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT"],
+    allow_headers=["Content-Type"],
 )
 
 from app.api import admin, subscriptions, transactions, news, market, settings, notifications, calculator  # noqa: E402
@@ -58,8 +89,6 @@ async def health():
 
 # 빌드된 프론트엔드 정적 파일 서빙 (배포 환경)
 # API 라우터보다 뒤에 등록해야 /api/* 우선순위가 유지된다.
-# SPA 특성상 /assets/* 만 StaticFiles로 처리하고,
-# 나머지 경로(React Router 경로 포함)는 index.html 폴백으로 처리한다.
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 if os.path.isdir(_STATIC_DIR):
     _ASSETS_DIR = os.path.join(_STATIC_DIR, "assets")

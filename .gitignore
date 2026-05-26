@@ -1,29 +1,43 @@
-# 환경변수 (API 키 포함) - 절대 커밋 금지
+# ===== 환경변수 (API 키 포함) — 절대 커밋 금지 =====
 .env
 .env.local
 .env.production
+.env.*.local
 
-# DB 파일
+# ===== DB 파일 =====
 *.db
 *.sqlite
+*.sqlite3
 
-# Python
+# ===== Python =====
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
 .venv/
 venv/
+env/
 .pytest_cache/
-
-# Node
-node_modules/
+*.egg-info/
 dist/
-build/
+.mypy_cache/
+.ruff_cache/
 
-# 빌드 결과물
+# ===== Node =====
+node_modules/
+frontend/dist/
+frontend/build/
+
+# ===== 빌드 결과물 (Railway 배포 시 생성) =====
 backend/static/
 
-# IDE
+# ===== IDE / OS =====
 .DS_Store
 .vscode/
 .idea/
+*.swp
+*.swo
+Thumbs.db
+
+# ===== 로그 =====
+*.log
