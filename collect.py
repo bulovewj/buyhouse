@@ -16,7 +16,7 @@ import logging
 import os
 import sys
 import xml.etree.ElementTree as ET
-from datetime import date
+from datetime import date, timedelta
 
 import httpx
 from dotenv import load_dotenv
@@ -110,95 +110,91 @@ async def collect_transactions(yearmonth: str) -> list[dict]:
 
 async def collect_subscriptions() -> list[dict]:
     results = []
+    today = date.today()
+    six_months_ago = (today - timedelta(days=180)).isoformat()
+    odcloud_base = "https://api.odcloud.kr/api/ApplyhomeInfoDetailSvc/v1"
 
-    # 청약홈
-    try:
-        async with httpx.AsyncClient(timeout=30, headers=UA) as client:
-            res = await client.get(
-                "https://apis.data.go.kr/B552555/APTInfoService/getAPTLttotPblancMdList",
-                params={"serviceKey": APPLYHOME_KEY, "sidoNm": "부산광역시",
-                        "numOfRows": 100, "pageNo": 1},
-            )
-            res.raise_for_status()
-            root = ET.fromstring(res.text)
+    # 한국부동산원 청약홈 분양정보 (APT + 무순위)
+    for op, default_type in [("getAPTLttotPblancDetail", "청약"), ("getRemndrLttotPblancDetail", "줍줍")]:
+        before = len(results)
+        try:
+            async with httpx.AsyncClient(timeout=30, headers=UA) as client:
+                res = await client.get(
+                    f"{odcloud_base}/{op}",
+                    params={
+                        "page": 1, "perPage": 100,
+                        "serviceKey": APPLYHOME_KEY,
+                        "returnType": "json",
+                        "cond[SUBSCRPT_AREA_CODE_NM::EQ]": "부산",
+                        "cond[RCRIT_PBLANC_DE::GTE]": six_months_ago,
+                    },
+                )
+                res.raise_for_status()
+                for raw in res.json().get("data", []):
+                    end_date = _parse_date(raw.get("RCEPT_ENDDE", ""))
+                    if end_date and date.fromisoformat(end_date) < today:
+                        continue  # 접수 마감된 건 제외
+                    dtl = raw.get("HOUSE_DTL_SECD_NM", "")
+                    sub_type = "줍줍" if "무순위" in dtl else default_type
+                    supply_count = None
+                    try:
+                        if sc := raw.get("TOT_SUPLY_HSHLDCO"):
+                            supply_count = int(sc)
+                    except (ValueError, TypeError):
+                        pass
+                    results.append({
+                        "title": raw.get("HOUSE_NM", ""),
+                        "type": sub_type,
+                        "location": raw.get("HSSPLY_ADRES", ""),
+                        "supply_count": supply_count,
+                        "price_min": None, "price_max": None,
+                        "application_start": _parse_date(raw.get("RCEPT_BGNDE", "")),
+                        "application_end": end_date,
+                        "source_url": raw.get("PBLANC_URL"),
+                        "is_notified": False,
+                    })
+            logger.info(f"청약홈 {op}: {len(results) - before}건 수집")
+        except httpx.HTTPStatusError as e:
+            logger.warning(f"청약홈 {op} HTTP {e.response.status_code} — 건너뜀")
+        except Exception as e:
+            logger.warning(f"청약홈 {op} 수집 실패: {e}")
 
-            def xtext(item, *tags):
-                for tag in tags:
-                    v = item.findtext(tag)
-                    if v and v.strip():
-                        return v.strip()
-                return ""
-
-            before = len(results)
-            for item in root.findall(".//item"):
-                t = lambda *tags: xtext(item, *tags)  # noqa: E731
-                if "부산" not in t("SIDO_NM", "sidoNm"):
-                    continue
-                title = t("HOUSE_NM", "housNm")
-                if not title:
-                    continue
-                house_secd = t("HOUSE_SECD_NM", "houseSecd")
-                sub_type = "줍줍" if "무순위" in house_secd else "청약"
-                manage_no = t("HOUSE_MANAGE_NO", "pnahouseManageNo")
-                supply_count = None
-                try:
-                    sc = t("TOT_SUPLY_HSHLDCO", "totSuplyHshldco")
-                    if sc:
-                        supply_count = int(sc.replace(",", ""))
-                except ValueError:
-                    pass
-                results.append({
-                    "title": title, "type": sub_type,
-                    "location": f"부산 {t('SGG_NM','sggNm')} {t('EML_NM','emdNm')}".strip(),
-                    "supply_count": supply_count, "price_min": None, "price_max": None,
-                    "application_start": _parse_date(t("RCEPT_BGNDE", "rcptBgnDe")),
-                    "application_end":   _parse_date(t("RCEPT_ENDDE", "rcptEndDe")),
-                    "source_url": (
-                        f"https://www.applyhome.co.kr/ai/aia/selectAPTLttotPblancListForm.do"
-                        f"?houseManageNo={manage_no}" if manage_no else None
-                    ),
-                    "is_notified": False,
-                })
-            logger.info(f"청약홈: {len(results) - before}건 수집")
-    except httpx.HTTPStatusError as e:
-        logger.warning(f"청약홈 HTTP {e.response.status_code} — 건너뜀")
-    except Exception as e:
-        logger.warning(f"청약홈 수집 실패: {e}")
-
-    # LH
+    # LH 청약센터 공지사항 (부산울산지역본부)
     lh_before = len(results)
     try:
         async with httpx.AsyncClient(timeout=30, headers=UA) as client:
             res = await client.get(
-                "https://apis.data.go.kr/B552555/lhNoticeDtlInfo1/lhNoticeDtlInfo1",
-                params={"serviceKey": LH_KEY, "PG_SZ": 100, "PAGE": 1, "CNP_CD": "26"},
+                "https://apis.data.go.kr/B552555/lhNoticeInfo1/getNoticeInfo1",
+                params={"serviceKey": LH_KEY, "SL_BBS_KD_CD": "03", "PG_SZ": 50, "PAGE": 1},
             )
             res.raise_for_status()
             data = res.json()
-            raw_items = data.get("dsList") or data.get("data") or (data if isinstance(data, list) else [])
-            for raw in raw_items:
-                title = raw.get("AIS_TP_NM") or raw.get("PAN_NM") or ""
+            ds_list = next((x.get("dsList", []) for x in data if "dsList" in x), [])
+            for raw in ds_list:
+                if "부산" not in raw.get("DEP_NM", ""):
+                    continue
+                title = raw.get("BBS_TL", "")
                 if not title:
                     continue
-                sido = raw.get("CNP_CD_NM") or ""
-                if sido and "부산" not in sido:
+                ais_tp = raw.get("AIS_TP_CD_NM", "")
+                if any(k in ais_tp for k in ["용지", "시설", "상가", "토지"]):
                     continue
-                ais_tp = raw.get("AIS_TP_CD_NM") or ""
-                pan_id = raw.get("PAN_ID") or ""
+                bbs_sn = raw.get("BBS_SN", "")
+                link_url = raw.get("LINK_URL") or ""
+                source = link_url or (
+                    f"https://apply.lh.or.kr/lhapply/apply/noti/an/view.do?bbsSn={bbs_sn}" if bbs_sn else None
+                )
                 results.append({
                     "title": title,
                     "type": "행복주택" if "행복" in ais_tp else "공공임대",
-                    "location": f"부산 {raw.get('SGG_NM', '')}".strip(),
+                    "location": f"부산 ({raw.get('DEP_NM', '')})",
                     "supply_count": None, "price_min": None, "price_max": None,
-                    "application_start": _parse_date(str(raw.get("PAN_SS") or "")),
-                    "application_end":   _parse_date(str(raw.get("PAN_DE") or "")),
-                    "source_url": (
-                        f"https://apply.lh.or.kr/lhapply/apply/wt/wrtanc/selectWtanNoList.do?sc={pan_id}"
-                        if pan_id else None
-                    ),
+                    "application_start": _parse_date(raw.get("BBS_WOU_DTTM", "")),
+                    "application_end": None,
+                    "source_url": source,
                     "is_notified": False,
                 })
-        logger.info(f"LH: {len(results) - lh_before}건 수집")
+        logger.info(f"LH 공지사항: {len(results) - lh_before}건 수집 (부산)")
     except httpx.HTTPStatusError as e:
         logger.warning(f"LH HTTP {e.response.status_code} — 건너뜀")
     except Exception as e:
