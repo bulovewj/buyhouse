@@ -90,6 +90,9 @@ def _xtext(item, *tags) -> str:
     return ""
 
 
+_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; BuyHouseDashboard/1.0)"}
+
+
 async def _fetch_applyhome() -> list:
     """청약홈 오픈API (data.go.kr) — 부산 아파트 분양공고"""
     url = "https://apis.data.go.kr/B552555/APTInfoService/getAPTLttotPblancMdList"
@@ -99,7 +102,7 @@ async def _fetch_applyhome() -> list:
         "numOfRows": 100,
         "pageNo": 1,
     }
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=15, headers=_HEADERS) as client:
         res = await client.get(url, params=params)
         res.raise_for_status()
 
@@ -165,7 +168,7 @@ async def _fetch_lh() -> list:
         "PAGE": 1,
         "CNP_CD": "26",  # 부산 지역 코드
     }
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=15, headers=_HEADERS) as client:
         res = await client.get(url, params=params)
         res.raise_for_status()
 

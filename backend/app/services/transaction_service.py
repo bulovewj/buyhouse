@@ -89,10 +89,12 @@ def _get_month_range(yearmonth: str) -> tuple[date, date]:
     return date(year, month, 1), date(year, month, last_day)
 
 
+_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; BuyHouseDashboard/1.0)"}
+
+
 async def _fetch_molit(lawd_cd: str, deal_ymd: str, district_name: str) -> list:
-    """국토부 아파트 매매 실거래가 XML 파싱"""
-    # data.go.kr 신규 HTTPS 엔드포인트 (구 openapi.molit.go.kr 대체)
-    url = "https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev"
+    """국토부 아파트 매매 실거래가 XML 파싱 (표준 API, 영문 필드명)"""
+    url = "https://apis.data.go.kr/1613000/RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade"
     params = {
         "serviceKey": settings.MOLIT_API_KEY,
         "LAWD_CD": lawd_cd,
@@ -100,7 +102,7 @@ async def _fetch_molit(lawd_cd: str, deal_ymd: str, district_name: str) -> list:
         "numOfRows": 1000,
         "pageNo": 1,
     }
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=15, headers=_HEADERS) as client:
         res = await client.get(url, params=params)
         res.raise_for_status()
 
@@ -114,7 +116,7 @@ async def _fetch_molit(lawd_cd: str, deal_ymd: str, district_name: str) -> list:
     for item in root.findall(".//item"):
         def t(tag): return (item.findtext(tag) or "").strip()  # noqa: E731
 
-        price_raw = t("거래금액").replace(",", "").replace(" ", "")
+        price_raw = t("dealAmount").replace(",", "").replace(" ", "")
         if not price_raw:
             continue
         try:
@@ -123,32 +125,32 @@ async def _fetch_molit(lawd_cd: str, deal_ymd: str, district_name: str) -> list:
             continue
 
         try:
-            deal_date = date(int(t("년")), int(t("월").lstrip("0") or "1"), int(t("일").lstrip("0") or "1"))
+            deal_date = date(int(t("dealYear")), int(t("dealMonth")), int(t("dealDay")))
         except (ValueError, TypeError):
             continue
 
         area_sqm = None
         try:
-            area_sqm = float(t("전용면적"))
+            area_sqm = float(t("excluUseAr"))
         except (ValueError, TypeError):
             pass
 
         floor = None
         try:
-            floor = int(t("층"))
+            floor = int(t("floor"))
         except (ValueError, TypeError):
             pass
 
         build_year = None
         try:
-            build_year = int(t("건축년도"))
+            build_year = int(t("buildYear"))
         except (ValueError, TypeError):
             pass
 
         items.append({
             "district": district_name,
-            "dong": t("법정동"),
-            "apt_name": t("아파트"),
+            "dong": t("umdNm"),
+            "apt_name": t("aptNm"),
             "area_sqm": area_sqm,
             "floor": floor,
             "price_won": price_won,
