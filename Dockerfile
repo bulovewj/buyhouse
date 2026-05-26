@@ -1,5 +1,8 @@
 FROM python:3.11-slim
 
+# 캐시 무효화용 (변경 시 재빌드 강제)
+ARG CACHE_DATE=2026-05-26b
+
 # Node.js 20 설치
 RUN apt-get update && apt-get install -y curl && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
