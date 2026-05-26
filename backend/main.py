@@ -4,7 +4,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -53,10 +52,6 @@ app = FastAPI(
     docs_url=None,   # 프로덕션에서 Swagger UI 비활성화
     redoc_url=None,
 )
-
-# TrustedHostMiddleware — Host 헤더 스푸핑 방지
-_allowed_hosts = ["buyhouse-production.up.railway.app", "localhost", "127.0.0.1"]
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=_allowed_hosts)
 
 # 보안 헤더
 app.add_middleware(SecurityHeadersMiddleware)
