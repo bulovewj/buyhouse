@@ -14,9 +14,12 @@ import argparse
 import asyncio
 import logging
 import os
+import re
 import sys
 import xml.etree.ElementTree as ET
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from email.utils import parsedate_to_datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 from dotenv import load_dotenv
@@ -30,8 +33,15 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 MOLIT_KEY      = os.getenv("MOLIT_API_KEY", "")
 APPLYHOME_KEY  = os.getenv("APPLYHOME_API_KEY", "")
 LH_KEY         = os.getenv("LH_API_KEY", "")
+NAVER_ID       = os.getenv("NAVER_CLIENT_ID", "")
+NAVER_SECRET   = os.getenv("NAVER_CLIENT_SECRET", "")
 RAILWAY_URL    = os.getenv("RAILWAY_URL", "https://buyhouse-production.up.railway.app")
 ADMIN_TOKEN    = os.getenv("ADMIN_TOKEN", "")
+
+KST = ZoneInfo("Asia/Seoul")
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+NEWS_KEYWORDS = ["부산 아파트", "부산 청약", "부산 부동산", "부산 재개발", "부산 분양", "부산 전세"]
 
 UA = {"User-Agent": "Mozilla/5.0 (compatible; BuyHouseDashboard/1.0)"}
 
@@ -204,8 +214,58 @@ async def collect_subscriptions() -> list[dict]:
     return results
 
 
-async def upload(yearmonth: str, transactions: list, subscriptions: list):
-    payload = {"yearmonth": yearmonth, "transactions": transactions, "subscriptions": subscriptions}
+async def collect_news() -> list[dict]:
+    if not NAVER_ID or not NAVER_SECRET:
+        logger.warning("NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 없음 — 뉴스 수집 건너뜀")
+        return []
+
+    def _strip(s: str) -> str:
+        return _HTML_TAG_RE.sub("", s).replace("&quot;", '"').replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").strip()
+
+    seen_urls: set[str] = set()
+    results = []
+
+    async with httpx.AsyncClient(timeout=10, headers={"X-Naver-Client-Id": NAVER_ID, "X-Naver-Client-Secret": NAVER_SECRET}) as client:
+        for keyword in NEWS_KEYWORDS:
+            for source_type, endpoint in [("뉴스", "news"), ("블로그", "blog")]:
+                try:
+                    await asyncio.sleep(0.12)  # 네이버 API 초당 10회 제한
+                    res = await client.get(
+                        f"https://openapi.naver.com/v1/search/{endpoint}.json",
+                        params={"query": keyword, "display": 10, "sort": "date"},
+                    )
+                    res.raise_for_status()
+                    for raw in res.json().get("items", []):
+                        title = _strip(raw.get("title", ""))
+                        link = raw.get("originallink") or raw.get("link") or ""
+                        if not title or not link or link in seen_urls:
+                            continue
+                        seen_urls.add(link)
+                        try:
+                            pub_dt = parsedate_to_datetime(raw.get("pubDate", "")).astimezone(KST).isoformat()
+                        except Exception:
+                            pub_dt = datetime.now(KST).isoformat()
+                        results.append({
+                            "title": title,
+                            "summary": _strip(raw.get("description", "")) or None,
+                            "source_url": link,
+                            "source_type": source_type,
+                            "sentiment": None,
+                            "sentiment_score": None,
+                            "published_at": pub_dt,
+                        })
+                except Exception as e:
+                    logger.warning(f"뉴스 수집 실패 ({keyword}/{source_type}): {e}")
+
+    # 최신순 50개만 업로드
+    results.sort(key=lambda x: x["published_at"] or "", reverse=True)
+    results = results[:50]
+    logger.info(f"뉴스·블로그 총 {len(results)}건 수집 완료")
+    return results
+
+
+async def upload(yearmonth: str, transactions: list, subscriptions: list, news: list):
+    payload = {"yearmonth": yearmonth, "transactions": transactions, "subscriptions": subscriptions, "news": news}
     async with httpx.AsyncClient(timeout=60) as client:
         res = await client.post(
             f"{RAILWAY_URL}/api/admin/upload",
@@ -242,10 +302,13 @@ async def main(yearmonth: str | None):
     logger.info("[2/3] 청약·공고 수집 중...")
     subscriptions = await collect_subscriptions()
 
-    logger.info("[3/3] Railway에 업로드 중...")
+    logger.info("[3/4] 뉴스·블로그 수집 중...")
+    news = await collect_news()
+
+    logger.info("[4/4] Railway에 업로드 중...")
     try:
-        result = await upload(yearmonth, transactions, subscriptions)
-        logger.info(f"업로드 완료: 실거래가 {result['saved']['transactions']}건, 청약 {result['saved']['subscriptions']}건 저장")
+        result = await upload(yearmonth, transactions, subscriptions, news)
+        logger.info(f"업로드 완료: 실거래가 {result['saved']['transactions']}건, 청약 {result['saved']['subscriptions']}건, 뉴스 {result['saved']['news']}건 저장")
     except httpx.HTTPStatusError as e:
         logger.error(f"업로드 실패 HTTP {e.response.status_code}: {e.response.text[:200]}")
         sys.exit(1)

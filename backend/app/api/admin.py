@@ -37,6 +37,7 @@ class UploadPayload(BaseModel):
     yearmonth: str | None = None
     transactions: list[dict[str, Any]] = []
     subscriptions: list[dict[str, Any]] = []
+    news: list[dict[str, Any]] = []
 
 
 @router.post("/admin/upload", dependencies=[Depends(verify_admin)])
@@ -44,10 +45,10 @@ async def upload_data(payload: UploadPayload):
     """로컬 수집 스크립트에서 데이터를 받아 DB에 저장 (해외 IP 우회용)"""
     from sqlalchemy import delete, select
     from app.core.database import AsyncSessionLocal
-    from app.models.models import Transaction, Subscription
+    from app.models.models import Transaction, Subscription, NewsReaction
     from app.scheduler.tasks import _update_market_stats
 
-    saved = {"transactions": 0, "subscriptions": 0}
+    saved = {"transactions": 0, "subscriptions": 0, "news": 0}
 
     async with AsyncSessionLocal() as db:
         # 실거래가: 해당 월 삭제 후 재적재
@@ -85,6 +86,27 @@ async def upload_data(payload: UploadPayload):
                     item[f] = None
             db.add(Subscription(**item))
             saved["subscriptions"] += 1
+
+        await db.commit()
+
+        # 뉴스: source_url 기준 중복 제외 후 신규만 저장
+        for item in payload.news:
+            item = dict(item)
+            if not item.get("source_url"):
+                continue
+            existing = await db.execute(
+                select(NewsReaction).where(NewsReaction.source_url == item["source_url"])
+            )
+            if existing.scalar_one_or_none() is not None:
+                continue
+            if isinstance(item.get("published_at"), str):
+                from datetime import datetime
+                try:
+                    item["published_at"] = datetime.fromisoformat(item["published_at"])
+                except ValueError:
+                    item["published_at"] = None
+            db.add(NewsReaction(**item))
+            saved["news"] += 1
 
         await db.commit()
 
