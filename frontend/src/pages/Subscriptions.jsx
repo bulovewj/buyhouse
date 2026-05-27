@@ -4,28 +4,22 @@ import Badge from '../components/Badge'
 
 const TABS = [
   { key: '', label: '전체' },
-  { key: 'subscription', label: '청약' },
-  { key: 'jjupjjup', label: '줍줍' },
-  { key: 'happy_house', label: '행복주택' },
-  { key: 'public_rental', label: '공공임대' },
+  { key: '청약', label: '청약' },
+  { key: '줍줍', label: '줍줍' },
+  { key: '행복주택', label: '행복주택' },
+  { key: '공공임대', label: '공공임대' },
 ]
 
 function typeLabel(type) {
-  const map = {
-    subscription: '청약',
-    jjupjjup: '줍줍',
-    happy_house: '행복주택',
-    public_rental: '공공임대',
-  }
-  return map[type] ?? type
+  return type ?? '-'
 }
 
 function typeVariant(type) {
   const map = {
-    subscription: 'info',
-    jjupjjup: 'warning',
-    happy_house: 'success',
-    public_rental: 'default',
+    '청약': 'info',
+    '줍줍': 'warning',
+    '행복주택': 'success',
+    '공공임대': 'default',
   }
   return map[type] ?? 'default'
 }
